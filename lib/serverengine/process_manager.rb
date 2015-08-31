@@ -50,7 +50,6 @@ module ServerEngine
       configure(config)
 
       @closed = false
-      @read_buffer = ''
 
       if @auto_tick
         TickThread.new(self)
@@ -211,13 +210,15 @@ module ServerEngine
       if ready_pipes
         ready_pipes.each do |r|
           begin
-            r.read_nonblock(1024, @read_buffer)
-          rescue Errno::EAGAIN, Errno::EINTR
-            next
-          rescue #EOFError
+            @read_buffer = r.read_nonblock(1024)
+          rescue EOFError, Errno::EIO # EIO might occur if the orphan has issues
             m = @rpipes.delete(r)
             m.start_immediate_stop!
             r.close rescue nil
+            next
+          rescue IO::WaitReadable # EWouldBlock or EINTR - http://ruby-doc.org/core-2.2.3/IO.html#method-i-read_nonblock
+            next
+          rescue Errno::EAGAIN # also handle other POSIX standard
             next
           end
 
