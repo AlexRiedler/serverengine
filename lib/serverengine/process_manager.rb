@@ -107,6 +107,7 @@ module ServerEngine
             exit! 0
 
           rescue
+            Logger.new(STDERR).warn("UNCAUGHT HEARTBEAT ERROR! x1")
             ServerEngine.dump_uncaught_error($!)
           ensure
             exit! 1
@@ -122,12 +123,14 @@ module ServerEngine
         return m
 
       ensure
+        Logger.new(STDERR).warn("CLOSING PIPES!")
         wpipe.close
         rpipe.close if rpipe
       end
     end
 
     def spawn(*args)
+      Logger.new(STDERR).warn("SPAWNING!")
       if args.first.is_a?(Hash)
         env = args.shift.dup
       else
@@ -212,14 +215,20 @@ module ServerEngine
           begin
             @read_buffer = r.read_nonblock(1024)
           rescue EOFError, Errno::EIO # EIO might occur if the orphan has issues
+            Logger.new(STDERR).warn("EOFError")
+            Logger.new(STDERR).warn("EOFError: #{r} vs #{@rpipes.keys.inspect}; causing immediate stop")
             m = @rpipes.delete(r)
             m.start_immediate_stop!
             r.close rescue nil
             next
           rescue IO::WaitReadable # EWouldBlock or EINTR - http://ruby-doc.org/core-2.2.3/IO.html#method-i-read_nonblock
+            Logger.new(STDERR).warn("WaitReadable")
             next
           rescue Errno::EAGAIN # also handle other POSIX standard
+            Logger.new(STDERR).warn("EAGAIN")
             next
+          rescue Exception => e
+            Logger.new(STDERR).warn("Unhandled Error in pipes: #{e.message}")
           end
 
           if m = @rpipes[r]
